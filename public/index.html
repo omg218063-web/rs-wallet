@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RS Wallet</title>
+<style>
+:root{--p:#e2136e;--p2:#b80e58;--bg:#f4f4f7;--tx:#222;--mut:#777;--ok:#12a150;--bad:#d92d20;--warn:#f79009}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:system-ui,-apple-system,"Noto Sans Bengali",sans-serif;background:var(--bg);color:var(--tx);padding-bottom:76px}
+.hide{display:none!important}
+.top{background:linear-gradient(135deg,var(--p),var(--p2));color:#fff;padding:16px 16px 70px}
+.top .row{display:flex;justify-content:space-between;align-items:center}
+.logo{font-weight:800;font-size:20px;letter-spacing:.3px}
+.logout{background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:20px;padding:6px 14px;font-size:13px}
+.wrap{padding:0 14px;margin-top:-52px}
+.card{background:#fff;border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.07);margin-bottom:14px}
+.bal-label{color:var(--mut);font-size:13px;display:flex;justify-content:space-between;align-items:center}
+.eye{background:none;border:0;font-size:18px}
+.bal{font-size:34px;font-weight:800;color:var(--p);margin:6px 0 12px}
+.split{display:flex;gap:10px}
+.split div{flex:1;background:#fdf0f6;border-radius:12px;padding:10px}
+.split small{color:var(--mut);display:block;font-size:12px}
+.split b{font-size:16px}
+.in{color:var(--ok)}.out{color:var(--bad)}
+.sites{display:flex;gap:10px}
+.sites div{flex:1;border:1px solid #f1d3e1;border-radius:12px;padding:10px}
+.sites small{color:var(--mut);font-size:12px;display:block}
+.sites b{font-size:16px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center}
+.grid button{background:none;border:0;font-size:12px;color:var(--tx);position:relative}
+.grid .ic{width:52px;height:52px;margin:0 auto 6px;border-radius:50%;background:#fdf0f6;display:flex;align-items:center;justify-content:center;font-size:24px}
+.badge{position:absolute;top:-2px;right:8px;background:var(--bad);color:#fff;border-radius:10px;font-size:11px;padding:1px 6px}
+h3{font-size:16px;margin-bottom:10px}
+.tx{display:flex;gap:10px;padding:11px 0;border-bottom:1px solid #f0f0f0;align-items:flex-start}
+.tx:last-child{border-bottom:0}
+.tic{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.tic.in{background:#e7f8ee}.tic.out{background:#fdeceb}
+.tm{flex:1;min-width:0}
+.tm b{font-size:14px;display:block}
+.tm small{color:var(--mut);font-size:12px;display:block;word-break:break-all}
+.ta{text-align:right}
+.ta b{font-size:15px;display:block}
+.st{font-size:11px;border-radius:10px;padding:2px 8px;display:inline-block;margin-top:3px}
+.st.pending{background:#fff4e0;color:var(--warn)}
+.st.approved,.st.paid{background:#e7f8ee;color:var(--ok)}
+.st.rejected{background:#fdeceb;color:var(--bad)}
+.acts{display:flex;gap:8px;margin-top:8px}
+.acts button{flex:1;padding:8px;border-radius:8px;border:0;font-size:13px;font-weight:600}
+.btn-ok{background:var(--ok);color:#fff}
+.btn-no{background:#fdeceb;color:var(--bad)}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+input,select{width:100%;padding:12px;border:1px solid #ddd;border-radius:10px;font-size:15px;background:#fff}
+.btn{width:100%;background:var(--p);color:#fff;border:0;border-radius:12px;padding:14px;font-size:16px;font-weight:700;margin-top:16px}
+.seg{display:flex;background:#f1f1f4;border-radius:12px;padding:4px;margin-bottom:6px}
+.seg button{flex:1;border:0;background:none;padding:10px;border-radius:10px;font-size:14px;font-weight:600;color:var(--mut)}
+.seg button.on{background:#fff;color:var(--p);box-shadow:0 1px 4px rgba(0,0,0,.1)}
+.filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+.filters input{grid-column:1/3}
+.empty{text-align:center;color:var(--mut);padding:24px 0;font-size:14px}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;display:flex;box-shadow:0 -2px 10px rgba(0,0,0,.08)}
+nav button{flex:1;border:0;background:none;padding:9px 0;font-size:11px;color:var(--mut);position:relative}
+nav button span{display:block;font-size:20px}
+nav button.on{color:var(--p);font-weight:700}
+#login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:linear-gradient(135deg,var(--p),var(--p2))}
+#login .box{background:#fff;border-radius:20px;padding:26px;width:100%;max-width:360px;text-align:center}
+#login h1{color:var(--p);margin-bottom:4px}
+#login p{color:var(--mut);font-size:13px;margin-bottom:14px}
+#toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 18px;border-radius:20px;font-size:14px;z-index:99;max-width:90%;text-align:center}
+#toast.err{background:var(--bad)}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <div class="box">
+    <h1>RS Wallet</h1>
+    <p>অ্যাডমিন পাসওয়ার্ড দিন</p>
+    <input type="password" id="pw" placeholder="পাসওয়ার্ড">
+    <button class="btn" id="loginBtn">লগইন</button>
+  </div>
+</div>
+
+<div id="app" class="hide">
+  <div class="top">
+    <div class="row">
+      <div class="logo">RS Wallet</div>
+      <button class="logout" id="logoutBtn">লগআউট</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- হোম -->
+    <div id="v-home">
+      <div class="card">
+        <div class="bal-label"><span>মোট ব্যালেন্স</span><button class="eye" id="eye">👁</button></div>
+        <div class="bal" id="bal">৳ ••••</div>
+        <div class="split">
+          <div><small>আজ এসেছে</small><b class="in" id="todayIn">৳ 0</b></div>
+          <div><small>আজ গেছে</small><b class="out" id="todayOut">৳ 0</b></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="grid">
+          <button data-go="send"><div class="ic">💸</div>টাকা পাঠান</button>
+          <button data-go="add"><div class="ic">➕</div>টাকা যোগ</button>
+          <button data-go="pending"><div class="ic">⏳</div>পেন্ডিং<span class="badge hide" id="pbadge">0</span></button>
+          <button data-go="history"><div class="ic">📜</div>হিস্ট্রি</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>সাইট অনুযায়ী মোট আয়</h3>
+        <div class="sites">
+          <div><small>RS গ্যালারি</small><b id="sGallery">৳ 0</b></div>
+          <div><small>RS ম্যাট্রিক্স</small><b id="sMatrix">৳ 0</b></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>সাম্প্রতিক লেনদেন</h3>
+        <div id="recent"></div>
+      </div>
+    </div>
+
+    <!-- পেন্ডিং -->
+    <div id="v-pending" class="hide">
+      <div class="card">
+        <h3>অ্যাপ্রুভের অপেক্ষায়</h3>
+        <div id="pendingList"></div>
+      </div>
+    </div>
+
+    <!-- হিস্ট্রি -->
+    <div id="v-history" class="hide">
+      <div class="card">
+        <h3>সব লেনদেন</h3>
+        <div class="filters">
+          <select id="fType">
+            <option value="">সব ধরন</option>
+            <option value="deposit">টাকা এসেছে</option>
+            <option value="payout">টাকা গেছে</option>
+          </select>
+          <select id="fStatus">
+            <option value="">সব স্ট্যাটাস</option>
+            <option value="pending">অপেক্ষমাণ</option>
+            <option value="approved">গৃহীত</option>
+            <option value="paid">পাঠানো হয়েছে</option>
+            <option value="rejected">বাতিল</option>
+          </select>
+          <select id="fSite" style="grid-column:1/3">
+            <option value="">সব সাইট</option>
+            <option value="rsgallery">RS গ্যালারি</option>
+            <option value="rsmatrix">RS ম্যাট্রিক্স</option>
+            <option value="manual">ম্যানুয়াল</option>
+          </select>
+          <input id="fQ" placeholder="TrxID / নাম্বার / অর্ডার খুঁজুন">
+        </div>
+        <div id="historyList"></div>
+      </div>
+    </div>
+
+    <!-- পাঠান / যোগ -->
+    <div id="v-money" class="hide">
+      <div class="card">
+        <div class="seg">
+          <button id="segSend" class="on">💸 টাকা পাঠান</button>
+          <button id="segAdd">➕ টাকা যোগ</button>
+        </div>
+
+        <div id="formSend">
+          <label>প্রাপকের নাম্বার</label>
+          <input id="pNumber" type="tel" inputmode="numeric" maxlength="11" placeholder="01XXXXXXXXX">
+          <label>মাধ্যম</label>
+          <select id="pMethod"><option value="bkash">বিকাশ</option><option value="nagad">নগদ</option></select>
+          <label>পরিমাণ (টাকা)</label>
+          <input id="pAmount" type="number" inputmode="decimal" placeholder="0">
+          <label>বিকাশ/নগদের TrxID (ঐচ্ছিক)</label>
+          <input id="pTrx" placeholder="যেমন: AB12CD34EF">
+          <label>নোট (ঐচ্ছিক)</label>
+          <input id="pNote" placeholder="কার জন্য / কেন">
+          <button class="btn" id="sendBtn">রেকর্ড করুন</button>
+          <p style="color:var(--mut);font-size:12px;margin-top:10px">আগে নিজের বিকাশ/নগদ অ্যাপ থেকে টাকা পাঠান, তারপর এখানে রেকর্ড করুন। ব্যালেন্স সাথে সাথে কমে যাবে।</p>
+        </div>
+
+        <div id="formAdd" class="hide">
+          <label>কোন সাইট থেকে</label>
+          <select id="aSite">
+            <option value="rsgallery">RS গ্যালারি</option>
+            <option value="rsmatrix">RS ম্যাট্রিক্স</option>
+            <option value="manual">অন্য</option>
+          </select>
+          <label>পরিমাণ (টাকা)</label>
+          <input id="aAmount" type="number" inputmode="decimal" placeholder="0">
+          <label>প্রেরকের নাম্বার (ঐচ্ছিক)</label>
+          <input id="aNumber" type="tel" inputmode="numeric" maxlength="11" placeholder="01XXXXXXXXX">
+          <label>TrxID (ঐচ্ছিক)</label>
+          <input id="aTrx" placeholder="যেমন: AB12CD34EF">
+          <label>নোট (ঐচ্ছিক)</label>
+          <input id="aNote" placeholder="নোট">
+          <button class="btn" id="addBtn">ব্যালেন্সে যোগ করুন</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <nav>
+    <button data-go="home" class="on"><span>🏠</span>হোম</button>
+    <button data-go="pending"><span>⏳</span>পেন্ডিং</button>
+    <button data-go="history"><span>📜</span>হিস্ট্রি</button>
+    <button data-go="send"><span>💸</span>পাঠান</button>
+  </nav>
+</div>
+
+<div id="toast" class="hide"></div>
+
+<script>
+var token = localStorage.getItem('rsw_token') || '';
+var balHidden = false;
+var balValue = 0;
+var SITE_NAMES = { rsgallery: 'RS গ্যালারি', rsmatrix: 'RS ম্যাট্রিক্স', manual: 'ম্যানুয়াল' };
+var ST_NAMES = { pending: 'অপেক্ষমাণ', approved: 'গৃহীত', rejected: 'বাতিল', paid: 'পাঠানো হয়েছে' };
+
+function $(s) { return document.querySelector(s); }
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+function money(n) { return '৳ ' + Number(n || 0).toLocaleString('en-IN'); }
+
+var toastTimer;
+function toast(msg, isErr) {
+  var t = $('#toast');
+  t.textContent = msg;
+  t.className = isErr ? 'err' : '';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.className = 'hide'; }, 2800);
+}
+
+async function api(path, opt) {
+  opt = opt || {};
+  var headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = 'Bearer ' + token;
+  var r = await fetch(path, {
+    method: opt.method || 'GET',
+    headers: headers,
+    body: opt.body ? JSON.stringify(opt.body) : undefined
+  });
+  var d = {};
+  try { d = await r.json(); } catch (e) {}
+  if (r.status === 401 && path !== '/api/admin/login') {
+    logout();
+    throw new Error('আবার লগইন করুন');
+  }
+  if (!r.ok || d.ok === false) throw new Error(d.error || 'সমস্যা হয়েছে');
+  return d;
+}
+
+function showApp() {
+  $('#login').classList.add('hide');
+  $('#app').classList.remove('hide');
+  go('home');
+}
+function logout() {
+  token = '';
+  localStorage.removeItem('rsw_token');
+  $('#app').classList.add('hide');
+  $('#login').classList.remove('hide');
+  $('#pw').value = '';
+}
+
+$('#loginBtn').onclick = async function () {
+  try {
+    var d = await api('/api/admin/login', { method: 'POST', body: { password: $('#pw').value } });
+    token = d.token;
+    localStorage.setItem('rsw_token', token);
+    showApp();
+  } catch (e) { toast(e.message, true); }
+};
+$('#pw').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('#loginBtn').click(); });
+$('#logoutBtn').onclick = logout;
+
+// ---------- ভিউ ----------
+var views = ['home', 'pending', 'history', 'money'];
+function setView(v) {
+  views.forEach(function (x) { $('#v-' + x).classList.toggle('hide', x !== v); });
+  window.scrollTo(0, 0);
+}
+function setNav(name) {
+  document.querySelectorAll('nav button').forEach(function (b) {
+    b.classList.toggle('on', b.dataset.go === name);
+  });
+}
+function setSeg(mode) {
+  $('#segSend').classList.toggle('on', mode === 'send');
+  $('#segAdd').classList.toggle('on', mode === 'add');
+  $('#formSend').classList.toggle('hide', mode !== 'send');
+  $('#formAdd').classList.toggle('hide', mode !== 'add');
+}
+function go(name) {
+  setNav(name === 'add' ? 'send' : name);
+  if (name === 'home') { setView('home'); loadHome(); }
+  else if (name === 'pending') { setView('pending'); loadPending(); }
+  else if (name === 'history') { setView('history'); loadHistory(); }
+  else if (name === 'send') { setView('money'); setSeg('send'); }
+  else if (name === 'add') { setView('money'); setSeg('add'); }
+}
+document.addEventListener('click', function (e) {
+  var g = e.target.closest('[data-go]');
+  if (g) { go(g.dataset.go); return; }
+  var a = e.target.closest('[data-act]');
+  if (a) decide(a.dataset.act, a.dataset.id);
+});
+$('#segSend').onclick = function () { setSeg('send'); };
+$('#segAdd').onclick = function () { setSeg('add'); };
+
+// ---------- লেনদেন সারি ----------
+function txRow(t, withActions) {
+  var isIn = t.type === 'deposit';
+  var title = isIn ? 'টাকা এসেছে · ' + (SITE_NAMES[t.site] || t.site) : 'টাকা পাঠানো';
+  var d = new Date(t.createdAt).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  var sub = [];
+  if (t.number) sub.push((t.method === 'nagad' ? 'নগদ ' : 'বিকাশ ') + t.number);
+  if (t.trxId) sub.push('TrxID: ' + t.trxId);
+  if (t.orderRef) sub.push('অর্ডার: ' + t.orderRef);
+  if (t.note) sub.push(t.note);
+  var html = '<div class="tx"><div class="tic ' + (isIn ? 'in' : 'out') + '">' + (isIn ? '⬇' : '⬆') + '</div>' +
+    '<div class="tm"><b>' + esc(title) + '</b>' +
+    (sub.length ? '<small>' + esc(sub.join(' · ')) + '</small>' : '') +
+    '<small>' + esc(d) + '</small>';
+  if (withActions && t.status === 'pending') {
+    html += '<div class="acts"><button class="btn-ok" data-act="approve" data-id="' + esc(t._id) + '">অ্যাপ্রুভ</button>' +
+      '<button class="btn-no" data-act="reject" data-id="' + esc(t._id) + '">বাতিল</button></div>';
+  }
+  html += '</div><div class="ta"><b class="' + (isIn ? 'in' : 'out') + '">' + (isIn ? '+' : '-') + money(t.amount) + '</b>' +
+    '<span class="st ' + esc(t.status) + '">' + esc(ST_NAMES[t.status] || t.status) + '</span></div></div>';
+  return html;
+}
+function renderList(el, list, withActions) {
+  el.innerHTML = list.length ? list.map(function (t) { return txRow(t, withActions); }).join('') : '<div class="empty">কোনো লেনদেন নেই</div>';
+}
+
+// ---------- ডাটা লোড ----------
+function showBal() {
+  $('#bal').textContent = balHidden ? '৳ ••••' : money(balValue);
+}
+$('#eye').onclick = function () { balHidden = !balHidden; showBal(); };
+
+async function loadHome() {
+  try {
+    var s = await api('/api/admin/summary');
+    balValue = s.balance;
+    showBal();
+    $('#todayIn').textContent = money(s.todayIn);
+    $('#todayOut').textContent = money(s.todayOut);
+    $('#sGallery').textContent = money(s.sites.rsgallery);
+    $('#sMatrix').textContent = money(s.sites.rsmatrix);
+    var b = $('#pbadge');
+    b.textContent = s.pending;
+    b.classList.toggle('hide', !s.pending);
+    var r = await api('/api/admin/tx?limit=6');
+    renderList($('#recent'), r.list, false);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadPending() {
+  try {
+    var r = await api('/api/admin/tx?type=deposit&status=pending&limit=100');
+    renderList($('#pendingList'), r.list, true);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadHistory() {
+  try {
+    var p = new URLSearchParams();
+    if ($('#fType').value) p.set('type', $('#fType').value);
+    if ($('#fStatus').value) p.set('status', $('#fStatus').value);
+    if ($('#fSite').value) p.set('site', $('#fSite').value);
+    if ($('#fQ').value.trim()) p.set('q', $('#fQ').value.trim());
+    p.set('limit', '100');
+    var r = await api('/api/admin/tx?' + p.toString());
+    renderList($('#historyList'), r.list, true);
+  } catch (e) { toast(e.message, true); }
+}
+['fType', 'fStatus', 'fSite'].forEach(function (id) { $('#' + id).onchange = loadHistory; });
+var qTimer;
+$('#fQ').oninput = function () { clearTimeout(qTimer); qTimer = setTimeout(loadHistory, 400); };
+
+async function decide(act, id) {
+  var msg = act === 'approve' ? 'এই টাকা অ্যাপ্রুভ করবেন? ব্যালেন্সে যোগ হবে।' : 'এই রিকোয়েস্ট বাতিল করবেন?';
+  if (!confirm(msg)) return;
+  try {
+    await api('/api/admin/tx/' + id + '/' + act, { method: 'POST' });
+    toast(act === 'approve' ? 'অ্যাপ্রুভ হয়েছে' : 'বাতিল হয়েছে');
+    if (!$('#v-pending').classList.contains('hide')) loadPending();
+    else if (!$('#v-history').classList.contains('hide')) loadHistory();
+    else loadHome();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- ফর্ম ----------
+$('#sendBtn').onclick = async function () {
+  var body = {
+    number: $('#pNumber').value.trim(),
+    method: $('#pMethod').value,
+    amount: $('#pAmount').value,
+    trxId: $('#pTrx').value.trim(),
+    note: $('#pNote').value.trim()
+  };
+  if (!confirm(body.number + ' নাম্বারে ' + money(body.amount) + ' পাঠানো রেকর্ড করবেন?')) return;
+  try {
+    await api('/api/admin/payout', { method: 'POST', body: body });
+    toast('রেকর্ড হয়েছে');
+    ['pNumber', 'pAmount', 'pTrx', 'pNote'].forEach(function (i) { $('#' + i).value = ''; });
+    go('home');
+  } catch (e) { toast(e.message, true); }
+};
+
+$('#addBtn').onclick = async function () {
+  var body = {
+    site: $('#aSite').value,
+    amount: $('#aAmount').value,
+    number: $('#aNumber').value.trim(),
+    trxId: $('#aTrx').value.trim(),
+    note: $('#aNote').value.trim()
+  };
+  try {
+    await api('/api/admin/deposit', { method: 'POST', body: body });
+    toast('ব্যালেন্সে যোগ হয়েছে');
+    ['aAmount', 'aNumber', 'aTrx', 'aNote'].forEach(function (i) { $('#' + i).value = ''; });
+    go('home');
+  } catch (e) { toast(e.message, true); }
+};
+
+if (token) showApp();
+</script>
+</body>
+  </html>
