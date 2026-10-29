@@ -9,11 +9,15 @@ app.use(express.json({ limit: '100kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const MONGODB_URI = process.env.MONGODB_URI;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
-const TOKEN_SECRET = process.env.TOKEN_SECRET || ADMIN_PASSWORD;
+const ADMIN_PIN = String(process.env.ADMIN_PASSWORD || '');
+const TOKEN_SECRET = process.env.TOKEN_SECRET || ADMIN_PIN;
 
-if (!MONGODB_URI || !ADMIN_PASSWORD) {
+if (!MONGODB_URI || !ADMIN_PIN) {
   console.error('MONGODB_URI and ADMIN_PASSWORD are required');
+  process.exit(1);
+}
+if (!/^\d{4,8}$/.test(ADMIN_PIN)) {
+  console.error('ADMIN_PASSWORD must be a PIN of 4 to 8 digits only (example: 48213)');
   process.exit(1);
 }
 
@@ -63,7 +67,7 @@ function adminAuth(req, res, next) {
   next();
 }
 
-// লগইনে ভুল পাসওয়ার্ড দিলে ব্লক
+// ভুল পিন দিলে ব্লক (৫ বার ভুল = ১৫ মিনিট)
 const attempts = new Map();
 function loginBlocked(ip) {
   const a = attempts.get(ip);
@@ -78,16 +82,35 @@ function loginFail(ip) {
   }
   attempts.set(ip, a);
 }
+function checkPin(req, res) {
+  const ip = req.ip;
+  if (loginBlocked(ip)) {
+    res.status(429).json({ ok: false, error: 'অনেকবার ভুল পিন, ১৫ মিনিট পরে চেষ্টা করুন' });
+    return false;
+  }
+  if (!req.body.pin || !safeEqual(req.body.pin, ADMIN_PIN)) {
+    loginFail(ip);
+    res.status(403).json({ ok: false, error: 'ভুল পিন' });
+    return false;
+  }
+  attempts.delete(ip);
+  return true;
+}
 
 // ---------- ডাটাবেস মডেল ----------
 const txSchema = new mongoose.Schema(
   {
     type: { type: String, enum: ['deposit', 'payout'], required: true },
+    kind: String,
     site: { type: String, default: 'manual' },
     amount: { type: Number, required: true, min: 1 },
     method: { type: String, default: 'bkash' },
     number: String,
     trxId: { type: String, uppercase: true, trim: true },
+    lastDigits: String,
+    customer: String,
+    customerRef: String,
+    pkgName: String,
     orderRef: String,
     note: String,
     status: {
@@ -125,6 +148,10 @@ function startOfDhakaDay() {
   return new Date(d.getTime() - off);
 }
 
+function dhakaDate() {
+  return new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
+}
+
 function escRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -143,6 +170,11 @@ async function totals(match) {
   return { deposits: dep, payouts: pay };
 }
 
+async function balanceNow() {
+  const a = await totals();
+  return a.deposits - a.payouts;
+}
+
 function wrap(fn) {
   return function (req, res) {
     fn(req, res).catch(function (e) {
@@ -155,7 +187,7 @@ function wrap(fn) {
   };
 }
 
-// ---------- সাইট API (RS Gallery / RS Matrix এর সার্ভার থেকে কল হবে) ----------
+// ---------- সাইট API ----------
 app.post(
   '/api/site/deposit',
   siteAuth,
@@ -171,6 +203,10 @@ app.post(
       method: req.body.method === 'nagad' ? 'nagad' : 'bkash',
       number: clean(req.body.number, 20),
       trxId: trxId,
+      lastDigits: clean(req.body.lastDigits, 6),
+      customer: clean(req.body.customer, 60),
+      customerRef: clean(req.body.customerRef, 60),
+      pkgName: clean(req.body.pkgName, 80),
       orderRef: clean(req.body.orderRef, 60),
       status: 'pending'
     });
@@ -192,14 +228,18 @@ app.get(
 );
 
 // ---------- অ্যাডমিন API ----------
+app.get('/api/admin/pin-info', function (req, res) {
+  res.json({ ok: true, len: ADMIN_PIN.length });
+});
+
 app.post('/api/admin/login', function (req, res) {
   const ip = req.ip;
   if (loginBlocked(ip)) {
-    return res.status(429).json({ ok: false, error: 'অনেকবার ভুল হয়েছে, ১৫ মিনিট পরে চেষ্টা করুন' });
+    return res.status(429).json({ ok: false, error: 'অনেকবার ভুল পিন, ১৫ মিনিট পরে চেষ্টা করুন' });
   }
-  if (!req.body.password || !safeEqual(req.body.password, ADMIN_PASSWORD)) {
+  if (!req.body.pin || !safeEqual(req.body.pin, ADMIN_PIN)) {
     loginFail(ip);
-    return res.status(401).json({ ok: false, error: 'ভুল পাসওয়ার্ড' });
+    return res.status(401).json({ ok: false, error: 'ভুল পিন' });
   }
   attempts.delete(ip);
   res.json({ ok: true, token: signToken() });
@@ -212,8 +252,24 @@ app.get(
     const all = await totals();
     const today = startOfDhakaDay();
     const t = await totals({ createdAt: { $gte: today } });
-    const gallery = await totals({ site: 'rsgallery' });
-    const matrix = await totals({ site: 'rsmatrix' });
+    const rows = await Tx.aggregate([
+      { $match: { type: 'deposit', createdAt: { $gte: today } } },
+      {
+        $group: {
+          _id: '$site',
+          count: { $sum: 1 },
+          sum: { $sum: { $cond: [{ $eq: ['$status', 'approved'] }, '$amount', 0] } },
+          pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } }
+        }
+      }
+    ]);
+    const sites = {
+      rsgallery: { count: 0, sum: 0, pending: 0 },
+      rsmatrix: { count: 0, sum: 0, pending: 0 }
+    };
+    rows.forEach(function (r) {
+      if (sites[r._id]) sites[r._id] = { count: r.count, sum: r.sum, pending: r.pending };
+    });
     const pending = await Tx.countDocuments({ status: 'pending' });
     res.json({
       ok: true,
@@ -223,10 +279,8 @@ app.get(
       todayIn: t.deposits,
       todayOut: t.payouts,
       pending: pending,
-      sites: {
-        rsgallery: gallery.deposits,
-        rsmatrix: matrix.deposits
-      }
+      today: sites,
+      todayDate: dhakaDate()
     });
   })
 );
@@ -239,14 +293,67 @@ app.get(
     if (['deposit', 'payout'].includes(req.query.type)) f.type = req.query.type;
     if (['pending', 'approved', 'rejected', 'paid'].includes(req.query.status)) f.status = req.query.status;
     if (['rsgallery', 'rsmatrix', 'manual'].includes(req.query.site)) f.site = req.query.site;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(req.query.date || '')) {
+      const s = new Date(req.query.date + 'T00:00:00+06:00');
+      if (!isNaN(s.getTime())) f.createdAt = { $gte: s, $lt: new Date(s.getTime() + 864e5) };
+    }
     const q = clean(req.query.q, 40);
     if (q) {
       const rx = new RegExp(escRegex(q), 'i');
-      f.$or = [{ trxId: rx }, { number: rx }, { orderRef: rx }, { note: rx }];
+      f.$or = [
+        { trxId: rx }, { number: rx }, { orderRef: rx }, { note: rx },
+        { customer: rx }, { lastDigits: rx }, { pkgName: rx }
+      ];
     }
-    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const limit = Math.min(Number(req.query.limit) || 50, 300);
     const list = await Tx.find(f).sort({ createdAt: -1 }).limit(limit).lean();
     res.json({ ok: true, list: list });
+  })
+);
+
+// দৈনিক ফাইল: প্রতিদিনের হিসাব (ঢাকার সময় অনুযায়ী)
+app.get(
+  '/api/admin/days',
+  adminAuth,
+  wrap(async function (req, res) {
+    const rows = await Tx.aggregate([
+      {
+        $group: {
+          _id: {
+            d: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: 'Asia/Dhaka' } },
+            s: '$site',
+            t: '$type'
+          },
+          count: { $sum: 1 },
+          sum: { $sum: { $cond: [{ $in: ['$status', ['approved', 'paid']] }, '$amount', 0] } },
+          pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } }
+        }
+      },
+      { $sort: { '_id.d': -1 } },
+      { $limit: 900 }
+    ]);
+    const map = {};
+    rows.forEach(function (r) {
+      const d = r._id.d;
+      const m = map[d] || (map[d] = {
+        date: d,
+        rsgallery: { count: 0, sum: 0, pending: 0 },
+        rsmatrix: { count: 0, sum: 0, pending: 0 },
+        manual: { count: 0, sum: 0, pending: 0 },
+        out: { count: 0, sum: 0 }
+      });
+      if (r._id.t === 'payout') {
+        m.out.count += r.count;
+        m.out.sum += r.sum;
+      } else {
+        const k = m[r._id.s] && r._id.s !== 'out' ? r._id.s : 'manual';
+        m[k].count += r.count;
+        m[k].sum += r.sum;
+        m[k].pending += r.pending;
+      }
+    });
+    const days = Object.values(map).sort(function (a, b) { return a.date < b.date ? 1 : -1; }).slice(0, 120);
+    res.json({ ok: true, days: days });
   })
 );
 
@@ -278,15 +385,16 @@ app.post(
   })
 );
 
-// টাকা যোগ (ম্যানুয়াল) — সাথে সাথে অ্যাপ্রুভড
+// টাকা যোগ (ম্যানুয়াল) — পিন লাগবে, সাথে সাথে অ্যাপ্রুভড
 app.post(
   '/api/admin/deposit',
   adminAuth,
   wrap(async function (req, res) {
+    if (!checkPin(req, res)) return;
     const amount = num(req.body.amount);
     if (!amount) return res.status(400).json({ ok: false, error: 'সঠিক পরিমাণ দিন' });
     const site = ['rsgallery', 'rsmatrix', 'manual'].includes(req.body.site) ? req.body.site : 'manual';
-    await Tx.create({
+    const tx = await Tx.create({
       type: 'deposit',
       site: site,
       amount: amount,
@@ -297,28 +405,29 @@ app.post(
       status: 'approved',
       decidedAt: new Date()
     });
-    res.json({ ok: true });
+    res.json({ ok: true, tx: tx, balance: await balanceNow() });
   })
 );
 
-// টাকা পাঠান — তুমি বিকাশ/নগদ থেকে পাঠিয়ে এখানে রেকর্ড করবে
+// টাকা পাঠান / ক্যাশ আউট — পিন লাগবে (আগে বিকাশ/নগদ থেকে পাঠিয়ে এখানে রেকর্ড)
 app.post(
   '/api/admin/payout',
   adminAuth,
   wrap(async function (req, res) {
+    if (!checkPin(req, res)) return;
     const amount = num(req.body.amount);
     const number = clean(req.body.number, 20);
     if (!amount) return res.status(400).json({ ok: false, error: 'সঠিক পরিমাণ দিন' });
     if (!number || !/^01\d{9}$/.test(number)) {
       return res.status(400).json({ ok: false, error: 'সঠিক ১১ ডিজিটের নাম্বার দিন' });
     }
-    const all = await totals();
-    const balance = all.deposits - all.payouts;
+    const balance = await balanceNow();
     if (amount > balance) {
       return res.status(400).json({ ok: false, error: 'ব্যালেন্স যথেষ্ট নেই। বর্তমান ব্যালেন্স: ' + balance });
     }
-    await Tx.create({
+    const tx = await Tx.create({
       type: 'payout',
+      kind: req.body.kind === 'cashout' ? 'cashout' : 'send',
       site: 'manual',
       amount: amount,
       method: req.body.method === 'nagad' ? 'nagad' : 'bkash',
@@ -328,7 +437,7 @@ app.post(
       status: 'paid',
       decidedAt: new Date()
     });
-    res.json({ ok: true });
+    res.json({ ok: true, tx: tx, balance: balance - amount });
   })
 );
 
@@ -336,12 +445,33 @@ app.get('/health', function (req, res) {
   res.send('ok');
 });
 
+// ---------- কিপ-অ্যালাইভ (ডিফল্টে বন্ধ) ----------
+function startKeepAlive() {
+  if (process.env.KEEP_ALIVE !== '1') return;
+  const urls = [];
+  if (process.env.RENDER_EXTERNAL_URL) urls.push(process.env.RENDER_EXTERNAL_URL + '/health');
+  String(process.env.KEEP_ALIVE_URLS || '').split(',').forEach(function (u) {
+    u = u.trim();
+    if (u) urls.push(u);
+  });
+  const parts = String(process.env.KEEP_ALIVE_HOURS || '0-24').split('-').map(Number);
+  const from = parts[0];
+  const to = parts[1];
+  setInterval(function () {
+    const h = new Date(Date.now() + 6 * 3600 * 1000).getUTCHours();
+    if (h < from || h >= to) return;
+    urls.forEach(function (u) { fetch(u).catch(function () {}); });
+  }, 4 * 60 * 1000);
+  console.log('Keep-alive on:', urls.join(', '));
+}
+
 const PORT = process.env.PORT || 3000;
 mongoose
   .connect(MONGODB_URI)
   .then(function () {
     app.listen(PORT, function () {
       console.log('RS Wallet running on ' + PORT);
+      startKeepAlive();
     });
   })
   .catch(function (e) {
