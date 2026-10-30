@@ -8,12 +8,13 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '100kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const MONGODB_URI = process.env.MONGODB_URI;
+// MONGODB_URI অথবা MONGO_URI, যেটা Render-এ আছে সেটাই কাজ করবে
+const MONGODB_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 const ADMIN_PIN = String(process.env.ADMIN_PASSWORD || '');
 const TOKEN_SECRET = process.env.TOKEN_SECRET || ADMIN_PIN;
 
 if (!MONGODB_URI || !ADMIN_PIN) {
-  console.error('MONGODB_URI and ADMIN_PASSWORD are required');
+  console.error('MONGODB_URI (or MONGO_URI) and ADMIN_PASSWORD are required');
   process.exit(1);
 }
 if (!/^\d{4,8}$/.test(ADMIN_PIN)) {
@@ -41,6 +42,16 @@ function siteAuth(req, res, next) {
   }
   if (!found) return res.status(401).json({ ok: false, error: 'ভুল API key' });
   req.site = found.name;
+  next();
+}
+
+// ---------- অ্যাসিস্ট্যান্ট কি ----------
+function assistantAuth(req, res, next) {
+  const auth = req.headers.authorization || '';
+  const key = process.env.ASSISTANT_KEY || '';
+  if (!key || !safeEqual(auth, 'Bearer ' + key)) {
+    return res.status(401).json({ ok: false, error: 'Unauthorized' });
+  }
   next();
 }
 
@@ -224,6 +235,28 @@ app.get(
     });
     if (!tx) return res.status(404).json({ ok: false, error: 'পাওয়া যায়নি' });
     res.json({ ok: true, status: tx.status, amount: tx.amount });
+  })
+);
+
+// ---------- অ্যাসিস্ট্যান্ট API (শুধু সামারি) ----------
+app.get(
+  '/api/assistant/info',
+  assistantAuth,
+  wrap(async function (req, res) {
+    const all = await totals();
+    const today = await totals({ createdAt: { $gte: startOfDhakaDay() } });
+    const pending = await Tx.countDocuments({ status: 'pending' });
+    res.json({
+      ok: true,
+      site: 'RS Wallet',
+      balance: all.deposits - all.payouts,
+      totalIn: all.deposits,
+      totalOut: all.payouts,
+      todayIn: today.deposits,
+      todayOut: today.payouts,
+      pending: pending,
+      date: dhakaDate()
+    });
   })
 );
 
@@ -465,18 +498,13 @@ function startKeepAlive() {
   console.log('Keep-alive on:', urls.join(', '));
 }
 
+// ---------- সার্ভার চালু ----------
 const PORT = process.env.PORT || 3000;
 mongoose
   .connect(MONGODB_URI)
   .then(function () {
-    app.get('/api/assistant/info', assistantAuth, async (req, res) => {
-  // এখানে আপনার ডেটাবেস থেকে সামারি আনুন
-  res.json({
-    site: 'RS Wallet',
-    status: 'ok'
-    // totalUsers, todayDeposits, pendingWithdrawals ইত্যাদি
-  });
-});
+    app.listen(PORT, function () {
+      console.log('Server running on port ' + PORT);
       startKeepAlive();
     });
   })
