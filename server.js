@@ -469,8 +469,7 @@ const PORT = process.env.PORT || 3000;
 mongoose
   .connect(MONGODB_URI)
   .then(function () {
-    app.listen(PORT, function () {
-      console.log('RS Wallet running on ' + PORT);app.get('/api/assistant/info', assistantAuth, async (req, res) => {
+    app.get('/api/assistant/info', assistantAuth, async (req, res) => {
   // এখানে আপনার ডেটাবেস থেকে সামারি আনুন
   res.json({
     site: 'RS Wallet',
