@@ -511,4 +511,72 @@ mongoose
   .catch(function (e) {
     console.error('MongoDB connection failed', e);
     process.exit(1);
-  });
+  }); // ---------- অ্যাসিস্ট্যান্টের জন্য (শুধু দেখা, কিছু বদলায় না) ----------
+const ASSISTANT_KEY = process.env.ASSISTANT_KEY || '';
+
+function assistantAuth(req, res, next) {
+  const key = req.headers['x-assistant-key'];
+  if (!ASSISTANT_KEY || !key || !safeEqual(key, ASSISTANT_KEY)) {
+    return res.status(401).json({ ok: false, error: 'অনুমতি নেই' });
+  }
+  next();
+}
+
+app.get(
+  '/api/assistant/summary',
+  assistantAuth,
+  wrap(async function (req, res) {
+    const all = await totals();
+    const today = startOfDhakaDay();
+    const t = await totals({ createdAt: { $gte: today } });
+
+    const rows = await Tx.aggregate([
+      { $match: { type: 'deposit' } },
+      {
+        $group: {
+          _id: {
+            site: '$site',
+            status: '$status',
+            isToday: { $gte: ['$createdAt', today] }
+          },
+          count: { $sum: 1 },
+          sum: { $sum: '$amount' }
+        }
+      }
+    ]);
+
+    const sites = {};
+    rows.forEach(function (r) {
+      const s = r._id.site || 'manual';
+      const o = sites[s] || (sites[s] = { today: {}, allTime: {} });
+      const st = r._id.status;
+      function add(box) {
+        box[st] = box[st] || { count: 0, amount: 0 };
+        box[st].count += r.count;
+        box[st].amount += r.sum;
+      }
+      add(o.allTime);
+      if (r._id.isToday) add(o.today);
+    });
+
+    const pendingCount = await Tx.countDocuments({ status: 'pending' });
+    const pendingList = await Tx.find({ status: 'pending' })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('type site amount method customer pkgName createdAt -_id')
+      .lean();
+
+    res.json({
+      ok: true,
+      date: dhakaDate(),
+      balance: all.deposits - all.payouts,
+      totalIn: all.deposits,
+      totalOut: all.payouts,
+      todayIn: t.deposits,
+      todayOut: t.payouts,
+      pendingCount: pendingCount,
+      pendingList: pendingList,
+      sites: sites
+    });
+  })
+);
